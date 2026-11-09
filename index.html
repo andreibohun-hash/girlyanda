@@ -109,8 +109,10 @@ const CFG = {
   RING_MIN: 2,          // кольцо из двух кусков уже кольцо (один кусок замкнуться не может: у него a ≠ b)
   MAX_CHAIN: 14,        // технический предел длины (сжатие на экране); в игре до него не доходят
   TARGET_MIN: 4,        // цель уровня не меньше этого света
-  TARGET_MIN_K: 0.2,    // и не меньше этой доли максимума — иначе на раздаче с «провальными» партиями цель падает до пары колец
+  TARGET_MIN_K: 0.15,    // и не меньше этой доли максимума — иначе на раздаче с «провальными» партиями цель падает до пары колец
   NOVICE_RUNS: 80,      // прогонов «обычного игрока» до конца стола: по ним ставится цель уровня
+  SEED_TRIES: 12,       // сколько раздач перебрать, подбирая ту, где обычный игрок выигрывает около плана
+  CHECK_RUNS: 60,       // проверочных партий обычного игрока на раздачу (другие сиды, чем при подсчёте цели)
   CASUAL_SHORT: 4,      // «обычный игрок» не любит замыкать кольца короче этого…
   CASUAL_PATIENCE: 0.6, // …и в такой доле случаев выбирает другой ход, если он есть
   SOLVE_NODES: 200000,  // предел узлов солвера
@@ -118,6 +120,8 @@ const CFG = {
   FLY_MS: 230,          // полёт куска со стола на гирлянду
   RELAYOUT_MS: 200,     // сдвиг гирлянды при прицепе слева
   BULB_STEP_MS: 70,     // лампочки куска загораются по одной с этим шагом
+  JOIN_MS: 650,         // «поцелуй» совпавших ламп в стыке: вспышка, волна кольцом
+  WAVE_STEP_MS: 38,     // «ток» бежит по гирлянде от стыка: задержка на каждую лампу
   CLOSE_HOLD_MS: 380,   // замыкающий кусок долетел: щелчок, огни бегут по гирлянде — пауза перед сворачиванием
   CURL_MS: 520,         // гирлянда сворачивается в кольцо
   HANG_MS: 520,         // кольцо летит на фасад
@@ -147,12 +151,12 @@ const CFG = {
     SEG_W: 96,          // ширина куска на гирлянде (сжимается, если не влезает)
     BULB_R: 10.5,       // радиус лампочки на гирлянде при полной ширине куска (сжимается вместе с куском)
     END_R: 19,          // радиус большого разъёма на свободном конце
-    TABLE_MAX_K: 1.55,  // стол масштабируется под свободное место, но не крупнее этого
-    PIECE_W: 60,        // кусок на столе: ширина
-    PIECE_H: 42,        //                высота
-    HALF: 34,           // полушаг колонки раскладки
-    COLS: 10,           // колонки 0..COLS — в ряд до 6 кусков
-    ROW: 32,            // шаг ряда раскладки (перекрытие = PIECE_H − ROW)
+    TABLE_MAX_K: 1.35,  // стол масштабируется под свободное место, но не крупнее этого
+    PIECE_W: 72,        // кусок на столе: ширина (5 в ряд на 400)
+    PIECE_H: 60,        //                высота — лампы висят крупно
+    HALF: 40,           // полушаг колонки раскладки
+    COLS: 8,            // колонки 0..COLS — в ряд до 5 кусков
+    ROW: 42,            // шаг ряда раскладки (перекрытие = PIECE_H − ROW)
   },
 };
 
@@ -169,18 +173,18 @@ function mulberry32(seed){
 }
 
 // Раскладки стола: ряды от дальнего (верх, накрыт) к ближнему (низ, открыт).
-// Число — колонка в полушагах 0..VIEW.COLS (10). Кусок ряда r накрыт кусками ряда r+1 с колонкой c-1, c, c+1.
+// Число — колонка в полушагах 0..VIEW.COLS (8): в ряд до 5 кусков — так карточки крупнее. Кусок ряда r накрыт кусками ряда r+1 с колонкой c-1, c, c+1.
 const LAYOUTS = {
-  gate:   [[4, 6], [3, 5, 7]],                                              // 5: калитка, урок
-  steps:  [[5], [4, 6], [3, 5, 7]],                                         // 6: ступеньки
-  bench:  [[1, 3, 5, 7, 9], [0, 2, 4, 6, 8, 10]],                           // 11: лавка — широко и мелко
-  roofs:  [[2, 8], [1, 3, 7, 9], [0, 2, 4, 6, 8, 10]],                      // 12: две крыши
-  peaks:  [[1, 5, 9], [0, 2, 4, 6, 8, 10], [1, 3, 5, 7, 9]],                // 14: три горки
-  arch:   [[0, 10], [1, 9], [0, 2, 8, 10], [1, 3, 5, 7, 9], [0, 2, 4, 6, 8, 10]], // 19: арка с пустым центром
-  house:  [[5], [4, 6], [3, 5, 7], [2, 4, 6, 8], [1, 3, 5, 7, 9]],          // 15: домик
-  wave:   [[0, 5, 10], [1, 4, 6, 9], [0, 2, 4, 6, 8, 10], [1, 3, 5, 7, 9]], // 18: волна
-  towers: [[1, 9], [1, 9], [0, 2, 8, 10], [1, 3, 5, 7, 9], [0, 2, 4, 6, 8, 10]], // 19: две башни
-  castle: [[0, 5, 10], [1, 4, 6, 9], [2, 5, 8], [1, 3, 5, 7, 9], [0, 2, 4, 6, 8, 10]], // 21: замок
+  gate:   [[3, 5], [2, 4, 6]],                                              // 5: калитка, урок
+  steps:  [[4], [3, 5], [2, 4, 6]],                                         // 6: ступеньки
+  bench:  [[1, 3, 5, 7], [0, 2, 4, 6, 8]],                                  // 9: лавка — широко и мелко
+  roofs:  [[2, 6], [1, 3, 5, 7], [0, 2, 4, 6, 8]],                          // 11: две крыши
+  peaks:  [[1, 4, 7], [0, 2, 4, 6, 8], [1, 3, 5, 7]],                       // 12: три горки
+  arch:   [[0, 8], [1, 7], [0, 2, 6, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8]],    // 17: арка с пустым центром
+  house:  [[4], [3, 5], [2, 4, 6], [1, 3, 5, 7], [0, 2, 4, 6, 8]],          // 15: домик
+  wave:   [[0, 4, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8], [1, 3, 5, 7]],         // 16: волна
+  towers: [[1, 7], [1, 7], [0, 2, 6, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8]],    // 17: две башни
+  castle: [[0, 4, 8], [1, 3, 5, 7], [2, 4, 6], [1, 3, 5, 7], [0, 2, 4, 6, 8]], // 19: замок
 };
 
 // Уровни — декларативная таблица. K — число цветов; ring — длины колец в плане генератора;
@@ -267,17 +271,30 @@ function stateFromDeal(li, deal){
 // Цель уровня: столько света, сколько набирает доля L.win «обычных игроков» (casualRunState), доигрывающих стол до конца.
 // Не больше максимума (bestPlay) и не меньше TARGET_MIN. Всё детерминировано: уровень воспроизводим по номеру.
 const DEAL_CACHE = new Map();
+function targetFor(levelIndex, deal){
+  const L = LEVELS[levelIndex], s0 = stateFromDeal(levelIndex, { ...deal, target: Infinity });
+  const max = bestPlay(s0).score, scores = [];
+  for (let k = 0; k < CFG.NOVICE_RUNS; k++) scores.push(casualRunState(s0, 7 * k + 1, true).score);
+  scores.sort((x, y) => x - y);
+  const q = scores[Math.min(scores.length - 1, Math.floor((1 - L.win) * scores.length))];
+  return { max, target: Math.max(CFG.TARGET_MIN, Math.round(max * CFG.TARGET_MIN_K), Math.min(max, q)) };
+}
 function createState(levelIndex){
   const L = LEVELS[levelIndex];
   if (!DEAL_CACHE.has(levelIndex)){
-    const deal = dealPlan(L, 1000 * L.n), s0 = stateFromDeal(levelIndex, deal);
-    deal.maxScore = bestPlay(s0).score;
-    const scores = [];
-    for (let k = 0; k < CFG.NOVICE_RUNS; k++) scores.push(casualRunState(s0, 7 * k + 1, true).score);
-    scores.sort((x, y) => x - y);
-    const q = scores[Math.min(scores.length - 1, Math.floor((1 - L.win) * scores.length))];
-    deal.target = Math.max(CFG.TARGET_MIN, Math.round(deal.maxScore * CFG.TARGET_MIN_K), Math.min(deal.maxScore, q));
-    DEAL_CACHE.set(levelIndex, deal);
+    let best = null, bestGap = Infinity;
+    for (let tr = 0; tr < CFG.SEED_TRIES; tr++){
+      const deal = dealPlan(L, 1000 * L.n + tr), tg = targetFor(levelIndex, deal);
+      deal.maxScore = tg.max; deal.target = tg.target;
+      // проверка на других сидах: доля побед обычного игрока и сколько кусков остаётся к победе
+      const s0 = stateFromDeal(levelIndex, deal); let w = 0, left = 0;
+      for (let k = 0; k < CFG.CHECK_RUNS; k++){ const r = casualRunState(s0, 9973 * k + 17); if (r.win){ w++; left += r.left; } }
+      const rate = w / CFG.CHECK_RUNS, leftK = w ? left / w / s0.pieces.length : 1;
+      const gap = Math.max(0, Math.abs(rate - L.win) - 0.06) + Math.max(0, leftK - 0.35);
+      if (gap < bestGap){ best = deal; bestGap = gap; }
+      if (gap === 0) break;
+    }
+    DEAL_CACHE.set(levelIndex, best);
   }
   return stateFromDeal(levelIndex, DEAL_CACHE.get(levelIndex));
 }
@@ -458,6 +475,8 @@ const G = {
   vis: {},                      // id куска → визуальное состояние на гирлянде { x, w, fx, fw, t0, dur, fly, lit0 }
   table: {},                    // id куска → { flip0, shake0, back:{x,y,t0} } — эффекты на столе
   handFly: null,                // кусок летит из коробки в стопку
+  joins: [],                    // стыки: { t0, aId, bId, col } — «поцелуй» совпавших ламп
+  wave: null,                   // «ток» по гирлянде от стыка: { t0, idx }
   meter: null,                  // шкала света: { from, to, t0 }
   curls: [],                    // кольца в полёте: { items, pos, t0, slot }
   wreaths: [],                  // кольца на фасаде: { slot, items, t0 }
@@ -537,9 +556,13 @@ const Sound = {
   },
   note(step){ return 587.33 * Math.pow(2, PENTA[Math.max(0, Math.min(step, PENTA.length - 1))] / 12); },
   pick(){ this.hiss(28, 'bandpass', 2600, 0.16, 0, 3); this.tone(420, 50, 'triangle', 0.06); log('sound', 'pick'); },
-  attach(len){                         // щелчок вилки в розетку + три лампочки вверх по пентатонике
-    this.hiss(22, 'bandpass', 2400, 0.45, 0, 4); this.hiss(30, 'bandpass', 1300, 0.3, 0.03, 3); this.tone(130, 90, 'sine', 0.22, 0, 70);
-    for (let k = 0; k < 3; k++) this.bell(this.note(Math.min(len, 9) + k), 0.07 + k * CFG.BULB_STEP_MS / 1000, 0.07);
+  attach(len){                         // мэтч: щелчок, электрический «вжик», парный аккорд совпавших ламп, лампы вверх по пентатонике
+    this.hiss(22, 'bandpass', 2400, 0.5, 0, 4); this.hiss(30, 'bandpass', 1300, 0.3, 0.03, 3); this.tone(130, 110, 'sine', 0.26, 0, 65);
+    this.tone(1800, 120, 'sawtooth', 0.025, 0.01, 5200);                         // искра тока
+    const base = Math.min(len, 9);
+    this.bell(this.note(base), 0.02, 0.1); this.bell(this.note(base + 2), 0.02, 0.07);   // две совпавшие лампы — в унисон-квинту
+    for (let k = 0; k < NB; k++) this.bell(this.note(base + 3 + k), 0.1 + k * CFG.BULB_STEP_MS / 1000, 0.06);
+    this.hiss(260, 'highpass', 6000, 0.05, 0.06);                               // блёстки
     log('sound', 'attach', 'len=' + len);
   },
   bad(){ this.tone(150, 170, 'triangle', 0.2, 0, 105); this.hiss(60, 'lowpass', 500, 0.15); log('sound', 'bad'); },
@@ -633,7 +656,7 @@ function layoutGeo(){
   const ps = G.s.pieces, rows = 1 + Math.max(...ps.map(p => p.r)), minC = Math.min(...ps.map(p => p.c)), maxC = Math.max(...ps.map(p => p.c));
   const lw = (maxC - minC) * V.HALF + V.PIECE_W, lh = (rows - 1) * V.ROW + V.PIECE_H;
   const free = geo.tableBot - geo.tableTop;
-  geo.tk = Math.max(0.6, Math.min(V.TABLE_MAX_K, (W - 30) / lw, free / lh));
+  geo.tk = Math.max(0.6, Math.min(V.TABLE_MAX_K, (W - 8) / lw, free / lh));
   geo.minC = minC; geo.tableH = lh * geo.tk; geo.tx0 = (W - lw * geo.tk) / 2;
   geo.tableY = geo.tableTop + Math.max(0, (free - geo.tableH) / 2);
   geo.handX = geo.boxX + geo.boxW + 16; geo.handY = geo.boxY + geo.boxH - PH() - 6;
@@ -679,7 +702,7 @@ function burst(x, y, cols, n, speed, opt){
 // --- ходы оболочки ---
 function startLevel(li){
   G.s = createState(li); G.save.level = li; save();
-  Object.assign(G, { vis: {}, table: {}, curls: [], wreaths: [], parts: [], pops: [], drag: null, ending: 0, coach: null, boxNudge: 0, winGlow: 0, handFly: null });
+  Object.assign(G, { joins: [], wave: null, vis: {}, table: {}, curls: [], wreaths: [], parts: [], pops: [], drag: null, ending: 0, coach: null, boxNudge: 0, winGlow: 0, handFly: null });
   for (let k = 0; k < 4; k++) delete G['fw' + k];
   G.t = now(); layoutGeo(); litDirty = true; meterSet(0, G.t);
   const t = G.t; relayout(t); G.vis[G.s.chain[0].id].lit0 = t + 250;
@@ -716,16 +739,25 @@ function doMove(m, from){
     G.vis[p.id] = { fx: 0, fw: 0, x: 0, w: 0, t0: t, dur: 1, fly: { x: start.x, y: start.y, t0: t, dur: dur(CFG.FLY_MS) }, lit0: t + dur(CFG.FLY_MS) };
     const len = closed ? closedChainOf(prev, m).length : G.s.chain.length;
     setTimeout(() => {                                        // щелчок в момент касания разъёмов
-      Sound.attach(len); buzz(10);
-      G.swing = { t0: now(), amp: 7 };
+      Sound.attach(len); buzz([10, 30, 14]);
+      G.swing = { t0: now(), amp: 9 };
       let jx;
       if (closed){ const tg = chainTargets(closedChainOf(prev, m)); jx = m.side === 'L' ? tg[0].x + tg[0].w : tg[tg.length - 1].x; }
       else { const e = endsXY(); jx = e ? (m.side === 'L' ? e.L.x + segW(G.s.chain.length) : e.R.x - segW(G.s.chain.length)) : W / 2; }
-      burst(jx, sagY(jx), [PAL.warm, colorOf(m.side === 'L' ? p.b : p.a), '#ffffff'], 14, 170, { life: 520, size: 8 });
+      const mc = colorOf(m.side === 'L' ? p.b : p.a);
+      burst(jx, sagY(jx) + 14, [mc, mc, '#ffffff', PAL.warm], 24, 230, { life: 620, size: 9, g: 300 });
       log('fx.start', 'spark');
     }, CFG.FLY_MS / G.timeScale);
     if (closed) startCurl(closedChainOf(prev, m), t, p.id, start);
-    else relayout(t);
+    else {
+      relayout(t);
+      if (m.side !== 'S' && prev.chain.length){       // стык: совпавшие лампы «целуются», по гирлянде бежит ток
+        const kNew = G.s.chain.findIndex(q => q.id === p.id), land = t + dur(CFG.FLY_MS);
+        const aId = m.side === 'R' ? prev.chain[prev.chain.length - 1].id : p.id, bId = m.side === 'R' ? p.id : prev.chain[0].id;
+        G.joins.push({ t0: land, aId, bId, col: m.side === 'R' ? p.a : p.b });
+        G.wave = { t0: land, idx: m.side === 'R' ? kNew * NB : kNew * NB + NB - 1 };
+      }
+    }
     prev.pieces.forEach((q, i) => { if (!isOpen(prev, i) && isOpen(G.s, i)){ G.table[q.id] = Object.assign(G.table[q.id] || {}, { flip0: t + dur(160) }); setTimeout(() => Sound.flip(), 180 / G.timeScale); } });
     if (G.s.li === 0) G.save.tut.drag = 1;
     if (G.coach && G.coach.text.startsWith('Тяни')) G.coach = null;
@@ -926,9 +958,9 @@ function drawPlug(c, k, x, y, r){
   c.fillStyle = 'rgba(255,255,255,.9)'; drawShape(c, k, x, y, r * 0.46);
 }
 // drawBulb: лампочка, висящая цоколем вверх в точке (x, y); col — индекс цвета или 'white'; lit 0..1
-function drawBulb(c, x, y, col, lit, r){
+function drawBulb(c, x, y, col, lit, r, glowK){
   const name = typeof col === 'number' ? COLOR_NAMES[col] : 'white', hex = typeof col === 'number' ? colorOf(col) : PAL.warm;
-  if (lit > 0.02) glow(c, hex, x, y + r * 0.9, r * 9 * (0.7 + 0.3 * lit), 0.75 * lit);
+  if (lit > 0.02) glow(c, hex, x, y + r * 0.9, r * 9 * (0.7 + 0.3 * lit), 0.75 * lit * (glowK === undefined ? 1 : glowK));
   const im = spr((lit > 0.5 ? 'bulb-on-' : 'bulb-off-') + name);
   if (im){ const h = r * 3.1, w = h * im.width / im.height; c.drawImage(im, x - w / 2, y - h * 0.12, w, h); return; }
   c.fillStyle = lit > 0.5 ? hex : PAL.glass; c.beginPath(); c.ellipse(x, y + r * 1.2, r * 0.8, r, 0, 0, Math.PI * 2); c.fill();
@@ -950,8 +982,8 @@ function drawWire(c, x1, y1, x2, y2, sag, w){
   return (u) => ({ x: (1 - u) * (1 - u) * x1 + 2 * (1 - u) * u * mx + u * u * x2, y: (1 - u) * (1 - u) * y1 + 2 * (1 - u) * u * my + u * u * y2 });
 }
 // drawSegment: кусок на гирлянде: провод с тремя лампочками; lit — массив яркостей на лампочку
-function drawSegment(c, p, x1, y1, x2, y2, lit, br){
-  const at = drawWire(c, x1, y1, x2, y2, 4 + br * 0.4, 3), out = [];
+function drawSegment(c, p, x1, y1, x2, y2, lit, br, extraSag){
+  const at = drawWire(c, x1, y1, x2, y2, 4 + br * 0.4 + (extraSag || 0), 3), out = [];
   pieceBulbs(p).forEach((col, k) => { const q = at(bulbU(k)); drawBulb(c, q.x, q.y + 1, col, lit[k], br); out.push({ x: q.x, y: q.y + 1 }); });
   return out;
 }
@@ -965,14 +997,14 @@ function drawPiece(c, p, x, y, back, alpha, lift, k){
   const card = spr(back ? 'card-back' : 'card-face');
   if (card) c.drawImage(card, -3, -3, w + 6, h + 6);
   else { c.fillStyle = back ? PAL['tile-back'] : PAL.tile; c.strokeStyle = PAL['tile-edge']; c.lineWidth = 1.5; c.beginPath(); c.roundRect(0, 0, w, h, 10); c.fill(); c.stroke(); }
-  if (!back && LAMPS){                            // «лампа к лампе»: две крупные лампы на концах провода
-    const at = drawWire(c, 6, 9, w - 6, 9, 5, 2.6);
-    [0.16, 0.84].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0.35, 8.2); });
+  if (!back && LAMPS){                            // «лампа к лампе»: две крупные лампы на концах провода, горят вполсилы — цвет читается
+    const at = drawWire(c, 7, 10, w - 7, 10, 6, 3);
+    [0.17, 0.83].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0.6, 12.5, 0.3); });
   } else if (!back){
-    const at = drawWire(c, 14, 16, w - 14, 16, 14, 2.4);
-    [0.32, 0.5, 0.68].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0, 4.6); });
-    drawPlug(c, p.a, 14, 16, 11.5);
-    drawPlug(c, p.b, w - 14, 16, 11.5);
+    const at = drawWire(c, 17, 18, w - 17, 18, 16, 2.6);
+    [0.3, 0.5, 0.7].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0.6, 5.8, 0.3); });
+    drawPlug(c, p.a, 17, 18, 14);
+    drawPlug(c, p.b, w - 17, 18, 14);
   } else if (!card){
     c.strokeStyle = PAL.wire; c.lineWidth = 2.2; c.beginPath();
     for (let a = 0; a < 14; a += 0.3){ const r = 3 + a * 1.0, px = w / 2 + r * Math.cos(a) * 1.4, py = h / 2 + r * Math.sin(a) * 0.6; a ? c.lineTo(px, py) : c.moveTo(px, py); }
@@ -1095,7 +1127,7 @@ function drawClosing(c, cu, t){
 function drawGarland(c, t){
   const chain = G.s.chain; if (!chain.length){ if (!G.curls.length && !isWin(G.s)) drawEmptyHook(c, t); return; }
   const hs = G.drag ? hoverSide() : null, willClose = hs ? closesRing(G.s, G.drag.i, hs) : 0, ready = willClose > 0;
-  let first = null, last = null;
+  let first = null, last = null; const bulbAt = {}, boosts = [];
   chain.forEach((p, k) => {
     const v = G.vis[p.id]; if (!v) return;
     const q = visPos(p.id, t);
@@ -1106,16 +1138,37 @@ function drawGarland(c, t){
     }
     if (v.fly) delete v.fly;
     const x1 = q.x, x2 = q.x + q.w, y1 = sagY(x1), y2 = sagY(x2);
+    const wv = G.wave && t >= G.wave.t0 ? (t - G.wave.t0) / dur(CFG.WAVE_STEP_MS) : -99;
+    const boost = pieceBulbs(p).map((_, j) => Math.max(0, 1 - Math.abs(wv - Math.abs(k * NB + j - (G.wave ? G.wave.idx : 0))) / 1.6));
     const lit = pieceBulbs(p).map((_, j) => { const on = Math.max(0, Math.min(1, (t - v.lit0 - j * dur(CFG.BULB_STEP_MS)) / dur(90)));
-      return ready ? on * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t / 95 - (k * NB + j) * 0.9))) : on; });
+      return Math.max(boost[j] * on, ready ? on * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t / 95 - (k * NB + j) * 0.9))) : on); });
     const br = Math.max(4.6, V.BULB_R * Math.min(1, q.w / V.SEG_W * (LAMPS ? 1.35 : 1.12)) * (LAMPS ? 1.15 : 1));
-    const bp = drawSegment(c, p, x1, y1, x2, y2, lit, br);
+    const ds0 = t - v.lit0, bounce = ds0 > 0 && ds0 < dur(500) ? 9 * Math.exp(-ds0 / dur(120)) * Math.cos(ds0 / dur(48)) : 0;   // кусок приземлился с пружинкой
+    const bp = drawSegment(c, p, x1, y1, x2, y2, lit, br, bounce);
+    bulbAt[p.id] = { bp, br };
+    bp.forEach((q, j) => { if (boost[j] > 0.05) boosts.push({ x: q.x, y: q.y + br * 1.3, b: boost[j], col: pieceBulbs(p)[j], br }); });
     // вспышка в момент, когда лампочка загорелась
     lit.forEach((l, j) => { const ds = t - v.lit0 - j * dur(CFG.BULB_STEP_MS); if (ds > 0 && ds < dur(260)){ const xx = x1 + (x2 - x1) * bulbU(j); glow(c, '#ffffff', xx, sagY(xx) + br * 2.6, br * 10, 0.6 * (1 - ds / dur(260))); } });
     if (k > 0 && !LAMPS) drawPlug(c, p.a, x1, y1, Math.max(5, br * 0.75));
     if (k === 0) first = { x: x1, y: y1, col: p.a, b: { ...bp[0], br } };
     if (k === chain.length - 1) last = { x: x2, y: y2, col: p.b, b: { ...bp[bp.length - 1], br } };
   });
+  // ток: белое свечение бежит по лампам от стыка
+  for (const q of boosts) glow(c, '#ffffff', q.x, q.y, q.br * 8 * q.b, 0.55 * q.b);
+  // поцелуй совпавших ламп в стыке: обе раздуваются и вспыхивают, от стыка расходится кольцо их цвета
+  G.joins = G.joins.filter(j => t < j.t0 + dur(CFG.JOIN_MS));
+  for (const j of G.joins){
+    if (t < j.t0) continue;
+    const A = bulbAt[j.aId], B = bulbAt[j.bId]; if (!A || !B) continue;
+    const a = A.bp[A.bp.length - 1], b = B.bp[0], k = (t - j.t0) / dur(CFG.JOIN_MS), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 + A.br * 1.3;
+    const bump = Math.sin(Math.min(1, k * 2.2) * Math.PI), col = colorOf(j.col);
+    glow(c, col, mx, my, 150 * (0.6 + bump), 0.8 * (1 - k));
+    c.save(); c.globalAlpha = Math.pow(1 - k, 1.5) * 0.9; c.strokeStyle = col; c.lineWidth = 4 * (1 - k) + 1;
+    c.beginPath(); c.arc(mx, my, 8 + 70 * ease(k), 0, Math.PI * 2); c.stroke();
+    c.strokeStyle = '#ffffff'; c.lineWidth = 2 * (1 - k); c.beginPath(); c.arc(mx, my, 4 + 46 * ease(k), 0, Math.PI * 2); c.stroke(); c.restore();
+    drawBulb(c, a.x, a.y, j.col, 1, A.br * (1 + 0.55 * bump));
+    drawBulb(c, b.x, b.y, j.col, 1, B.br * (1 + 0.55 * bump));
+  }
   if (ready && first && last){                    // превью: кусок замкнёт кольцо — петля между концами
     const piece = pieceOf(G.s, G.drag.i), col = hs === 'L' ? piece.a : piece.b;
     c.save(); c.setLineDash([6, 7]); c.lineDashOffset = -t / 30; c.strokeStyle = colorOf(col); c.lineWidth = 3; c.globalAlpha = 0.9; c.lineCap = 'round';
