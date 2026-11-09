@@ -579,12 +579,12 @@ function goto(screen, payload){
   if (screen === 'menu'){
     const lv = LEVELS.map((L, i) => '<button data-act="lvl" data-i="' + i + '"' + (i > G.save.unlocked ? ' disabled' : '') + (i === G.save.level ? ' class="cur"' : '') + '>' + (i + 1) +
       (G.save.best[i] ? '<small>горит</small>' : '') + '</button>').join('');
-    card.innerHTML = '<div class="logo">Гирлянда</div><p>Цепляй кусок к концу того же цвета. Сошлись концы — кольцо, и двор светлеет.</p>' +
+    card.innerHTML = '<div class="logo">Гирлянда</div><p>' + (LAMPS ? 'Цепляй лампу к лампе того же цвета.' : 'Цепляй кусок к концу того же цвета.') + ' Сошлись концы — кольцо, и двор светлеет.</p>' +
       '<div class="row"><button class="primary big" data-act="play">Играть · ' + (G.save.level + 1) + '</button></div>' +
       '<div class="levels">' + lv + '</div><button class="ghost" data-act="help">Как играть</button>';
   }
   if (screen === 'help') card.innerHTML = '<h2>Как играть</h2><ul class="how">' +
-      '<li>Тяни кусок к концу гирлянды — касаться должны одинаковые цвета. Можно просто тапнуть.</li>' +
+      (LAMPS ? '<li>Тяни кусок к концу гирлянды — рядом должны оказаться лампы одного цвета. Можно просто тапнуть.</li>' : '<li>Тяни кусок к концу гирлянды — касаться должны одинаковые цвета. Можно просто тапнуть.</li>') +
       '<li>Концы сошлись — гирлянда замыкается в кольцо. Чем длиннее, тем больше света.</li>' +
       '<li>Нечем продолжить — бери из коробки.</li>' +
       '<li>Заполни шкалу «Свет двора».</li></ul><button class="primary" data-act="back">Понятно</button>';
@@ -685,7 +685,7 @@ function startLevel(li){
   const t = G.t; relayout(t); G.vis[G.s.chain[0].id].lit0 = t + 250;
   scheduleHint(t);
   log('event', 'level.start', 'level=' + (li + 1) + ' seed=' + G.s.seed + ' pieces=' + G.s.pieces.length + ' box=' + (G.s.box.length - 1) + ' target=' + G.s.target + ' max=' + G.s.maxScore);
-  if (li === 0 && !G.save.tut.drag) coach('Тяни кусок к концу того же цвета', 0);
+  if (li === 0 && !G.save.tut.drag) coach(LAMPS ? 'Тяни кусок к лампе того же цвета' : 'Тяни кусок к концу того же цвета', 0);
   goto('game'); hud();
 }
 function hud(){
@@ -934,8 +934,13 @@ function drawBulb(c, x, y, col, lit, r){
   c.fillStyle = lit > 0.5 ? hex : PAL.glass; c.beginPath(); c.ellipse(x, y + r * 1.2, r * 0.8, r, 0, 0, Math.PI * 2); c.fill();
   c.fillStyle = '#2a2f3a'; c.fillRect(x - r * 0.45, y, r * 0.9, r * 0.45);
 }
-// pieceBulbs: цвета трёх лампочек куска — левого разъёма, тёплая белая, правого
-const pieceBulbs = (p) => [p.a, 'white', p.b];
+// Скин: ?skin=lamps — «лампа к лампе»: у куска только две лампы на концах (цвет = разъём), без разъёмов-значков.
+// По умолчанию — разъёмы со значками формы и три лампы. Ядро и уровни одни и те же.
+const LAMPS = (() => { try { return new URLSearchParams(location.search).get('skin') === 'lamps'; } catch (e) { return false; } })();
+// pieceBulbs: цвета ламп куска; bulbU — где они на проводе (доля длины)
+const pieceBulbs = (p) => LAMPS ? [p.a, p.b] : [p.a, 'white', p.b];
+const bulbU = (j) => LAMPS ? [0.2, 0.8][j] : 0.25 + j * 0.25;
+const NB = LAMPS ? 2 : 3;
 // drawWire: витой провод от (x1,y1) до (x2,y2) с провисом sag; возвращает функцию точки на проводе u∈[0,1]
 function drawWire(c, x1, y1, x2, y2, sag, w){
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 + sag;
@@ -946,8 +951,9 @@ function drawWire(c, x1, y1, x2, y2, sag, w){
 }
 // drawSegment: кусок на гирлянде: провод с тремя лампочками; lit — массив яркостей на лампочку
 function drawSegment(c, p, x1, y1, x2, y2, lit, br){
-  const at = drawWire(c, x1, y1, x2, y2, 4 + br * 0.4, 3);
-  pieceBulbs(p).forEach((col, k) => { const q = at(0.25 + k * 0.25); drawBulb(c, q.x, q.y + 1, col, lit[k], br); });
+  const at = drawWire(c, x1, y1, x2, y2, 4 + br * 0.4, 3), out = [];
+  pieceBulbs(p).forEach((col, k) => { const q = at(bulbU(k)); drawBulb(c, q.x, q.y + 1, col, lit[k], br); out.push({ x: q.x, y: q.y + 1 }); });
+  return out;
 }
 // drawPiece: кусок на столе (PIECE_W×PIECE_H, масштаб k): картонка-плашка, провод, три лампочки, разъёмы по краям.
 // back — рубашка (накрыт: виден моток провода)
@@ -959,7 +965,10 @@ function drawPiece(c, p, x, y, back, alpha, lift, k){
   const card = spr(back ? 'card-back' : 'card-face');
   if (card) c.drawImage(card, -3, -3, w + 6, h + 6);
   else { c.fillStyle = back ? PAL['tile-back'] : PAL.tile; c.strokeStyle = PAL['tile-edge']; c.lineWidth = 1.5; c.beginPath(); c.roundRect(0, 0, w, h, 10); c.fill(); c.stroke(); }
-  if (!back){
+  if (!back && LAMPS){                            // «лампа к лампе»: две крупные лампы на концах провода
+    const at = drawWire(c, 6, 9, w - 6, 9, 5, 2.6);
+    [0.16, 0.84].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0.35, 8.2); });
+  } else if (!back){
     const at = drawWire(c, 14, 16, w - 14, 16, 14, 2.4);
     [0.32, 0.5, 0.68].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0, 4.6); });
     drawPlug(c, p.a, 14, 16, 11.5);
@@ -1022,9 +1031,9 @@ const wreathR = (n) => 12 + n * 1.7;
 function drawWreath(c, items, x, y, R, t, alpha){
   c.save(); c.globalAlpha = alpha === undefined ? 1 : alpha;
   c.strokeStyle = PAL.wire; c.lineWidth = 2.4; c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.stroke();
-  const m = items.length * 3;
+  const m = items.length * NB;
   items.forEach((p, k) => pieceBulbs(p).forEach((col, j) => {
-    const idx = k * 3 + j, a = -Math.PI / 2 + (idx / m) * Math.PI * 2, tw = 0.7 + 0.3 * Math.sin(t / 260 - idx * 0.8);
+    const idx = k * NB + j, a = -Math.PI / 2 + (idx / m) * Math.PI * 2, tw = 0.7 + 0.3 * Math.sin(t / 260 - idx * 0.8);
     drawBulb(c, x + R * Math.cos(a), y + R * Math.sin(a) - 2, col, tw, 3.3);
   }));
   c.restore();
@@ -1035,9 +1044,9 @@ function drawCurl(c, cu, t){
   const n = cu.items.length, k1 = ease((t - cu.t0) / dur(CFG.CURL_MS)), k2 = ease((t - cu.t0 - dur(CFG.CURL_MS)) / dur(CFG.HANG_MS));
   const R0 = Math.max(32, n * segW(n) / (2 * Math.PI)), cx0 = W / 2, cy0 = geo.gm + 10;
   const slot = wreathSlot(cu.slot), R = R0 + (wreathR(n) - R0) * k2, cx = cx0 + (slot.x - cx0) * k2, cy = cy0 + (slot.y - cy0) * k2 - Math.sin(k2 * Math.PI) * 40;
-  const m = n * 3, spin = k1 * 0.6 + k2 * Math.PI * 2, pts = [];
+  const m = n * NB, spin = k1 * 0.6 + k2 * Math.PI * 2, pts = [];
   cu.items.forEach((p, i) => { const q = cu.pos[i]; pieceBulbs(p).forEach((col, j) => {
-    const lx = q.x + q.w * (0.25 + j * 0.25), ly = sagY(lx) + 6, idx = i * 3 + j, a = -Math.PI / 2 + (idx / m) * Math.PI * 2 + spin;
+    const lx = q.x + q.w * bulbU(j), ly = sagY(lx) + 6, idx = i * NB + j, a = -Math.PI / 2 + (idx / m) * Math.PI * 2 + spin;
     const rx = cx + R * Math.cos(a), ry = cy + R * Math.sin(a);
     pts.push({ x: lx + (rx - lx) * k1, y: ly + (ry - ly) * k1, col });
   }); });
@@ -1051,25 +1060,27 @@ function drawCurl(c, cu, t){
 function drawClosing(c, cu, t){
   const landed = t >= cu.tc + dur(CFG.FLY_MS), kr = easeBack((t - cu.tc) / dur(CFG.RELAYOUT_MS)), n = cu.items.length;
   const hold = landed ? (t - cu.tc - dur(CFG.FLY_MS)) / dur(CFG.CLOSE_HOLD_MS) : 0;
-  let flying = null;
+  let flying = null; const endBulbs = {};
   cu.items.forEach((p, k) => {
     const tg = cu.pos[k];
     if (p.id === cu.newId && !landed){ flying = { p, tg }; return; }
     const o = cu.olds[k] || tg, x = o.x + (tg.x - o.x) * kr, w = o.w + (tg.w - o.w) * kr;
     const x1 = x, x2 = x + w, y1 = sagY(x1), y2 = sagY(x2), br = Math.max(4.6, V.BULB_R * Math.min(1, w / V.SEG_W * 1.12));
-    const lit = [0, 1, 2].map(j => {
+    const lit = pieceBulbs(p).map((_, j) => {
       const on = Math.max(0, Math.min(1, (t - cu.lit0[k] - j * dur(CFG.BULB_STEP_MS * 0.6)) / dur(70)));
-      return landed ? Math.max(on, 0.55 + 0.45 * Math.sin(t / 60 - (k * 3 + j) * 0.8)) : on;   // огни бегут по кругу
+      return landed ? Math.max(on, 0.55 + 0.45 * Math.sin(t / 60 - (k * NB + j) * 0.8)) : on;   // огни бегут по кругу
     });
-    drawSegment(c, p, x1, y1, x2, y2, lit, br);
-    if (k > 0) drawPlug(c, p.a, x1, y1, Math.max(5, br * 0.75));
+    const bp = drawSegment(c, p, x1, y1, x2, y2, lit, br);
+    if (k > 0 && !LAMPS) drawPlug(c, p.a, x1, y1, Math.max(5, br * 0.75));
+    if (k === 0) endBulbs.L = { ...bp[0], br, col: p.a };
+    if (k === n - 1) endBulbs.R = { ...bp[bp.length - 1], br, col: p.b };
   });
   // концы — одного цвета: большие разъёмы, после посадки тянутся друг к другу и пульсируют
   const first = cu.items[0], last = cu.items[n - 1], fx = cu.pos[0].x, lx = cu.pos[n - 1].x + cu.pos[n - 1].w;
   const pulse = landed ? 1 + 0.18 * Math.sin(hold * Math.PI * 3) : 1;
   if (landed){ glow(c, colorOf(first.a), fx, sagY(fx), 90 * pulse, 0.6); glow(c, colorOf(last.b), lx, sagY(lx), 90 * pulse, 0.6); }
-  drawPlug(c, first.a, fx, sagY(fx), V.END_R * pulse);
-  drawPlug(c, last.b, lx, sagY(lx), V.END_R * pulse);
+  if (LAMPS){ for (const e of [endBulbs.L, endBulbs.R]) if (e) drawBulb(c, e.x, e.y, e.col, 1, e.br * 1.3 * pulse); }
+  else { drawPlug(c, first.a, fx, sagY(fx), V.END_R * pulse); drawPlug(c, last.b, lx, sagY(lx), V.END_R * pulse); }
   if (landed){                                     // петля между концами, проявляется — сейчас замкнётся
     c.save(); c.globalAlpha = Math.min(1, hold * 2.5); c.strokeStyle = colorOf(first.a); c.lineWidth = 3; c.setLineDash([6, 7]); c.lineDashOffset = -t / 25; c.lineCap = 'round';
     c.beginPath(); c.moveTo(fx, sagY(fx)); c.bezierCurveTo(fx - 40, sagY(fx) + 80, lx + 40, sagY(lx) + 80, lx, sagY(lx)); c.stroke(); c.restore();
@@ -1095,15 +1106,15 @@ function drawGarland(c, t){
     }
     if (v.fly) delete v.fly;
     const x1 = q.x, x2 = q.x + q.w, y1 = sagY(x1), y2 = sagY(x2);
-    const lit = [0, 1, 2].map(j => { const on = Math.max(0, Math.min(1, (t - v.lit0 - j * dur(CFG.BULB_STEP_MS)) / dur(90)));
-      return ready ? on * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t / 95 - (k * 3 + j) * 0.9))) : on; });
-    const br = Math.max(4.6, V.BULB_R * Math.min(1, q.w / V.SEG_W * 1.12));
-    drawSegment(c, p, x1, y1, x2, y2, lit, br);
+    const lit = pieceBulbs(p).map((_, j) => { const on = Math.max(0, Math.min(1, (t - v.lit0 - j * dur(CFG.BULB_STEP_MS)) / dur(90)));
+      return ready ? on * (0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t / 95 - (k * NB + j) * 0.9))) : on; });
+    const br = Math.max(4.6, V.BULB_R * Math.min(1, q.w / V.SEG_W * (LAMPS ? 1.35 : 1.12)) * (LAMPS ? 1.15 : 1));
+    const bp = drawSegment(c, p, x1, y1, x2, y2, lit, br);
     // вспышка в момент, когда лампочка загорелась
-    lit.forEach((l, j) => { const ds = t - v.lit0 - j * dur(CFG.BULB_STEP_MS); if (ds > 0 && ds < dur(260)){ const xx = x1 + (x2 - x1) * (0.25 + j * 0.25); glow(c, '#ffffff', xx, sagY(xx) + br * 2.6, br * 10, 0.6 * (1 - ds / dur(260))); } });
-    if (k > 0) drawPlug(c, p.a, x1, y1, Math.max(5, br * 0.75));
-    if (k === 0) first = { x: x1, y: y1, col: p.a };
-    if (k === chain.length - 1) last = { x: x2, y: y2, col: p.b };
+    lit.forEach((l, j) => { const ds = t - v.lit0 - j * dur(CFG.BULB_STEP_MS); if (ds > 0 && ds < dur(260)){ const xx = x1 + (x2 - x1) * bulbU(j); glow(c, '#ffffff', xx, sagY(xx) + br * 2.6, br * 10, 0.6 * (1 - ds / dur(260))); } });
+    if (k > 0 && !LAMPS) drawPlug(c, p.a, x1, y1, Math.max(5, br * 0.75));
+    if (k === 0) first = { x: x1, y: y1, col: p.a, b: { ...bp[0], br } };
+    if (k === chain.length - 1) last = { x: x2, y: y2, col: p.b, b: { ...bp[bp.length - 1], br } };
   });
   if (ready && first && last){                    // превью: кусок замкнёт кольцо — петля между концами
     const piece = pieceOf(G.s, G.drag.i), col = hs === 'L' ? piece.a : piece.b;
@@ -1130,6 +1141,13 @@ function drawRingBadge(c, x, y, n, ready, t){
   c.restore();
 }
 function drawEnd(c, e, s, hl, ready, t){
+  if (LAMPS && e.b){                              // «лампа к лампе»: конец — сама крайняя лампа, крупнее и с ореолом
+    const cx = e.b.x, cy = e.b.y + e.b.br * 1.25, r = e.b.br * 1.32 * s;
+    glow(c, colorOf(e.col), cx, cy, (ready ? 110 : 70) * s, ready ? 0.6 : 0.35 + 0.1 * Math.sin(t / 400));
+    if (hl){ glow(c, '#ffffff', cx, cy, 100, 0.5); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(cx, cy, r * 2.1 + Math.sin(t / 80) * 1.5, 0, Math.PI * 2); c.stroke(); }
+    drawBulb(c, e.b.x, e.b.y, e.col, 1, r);
+    return;
+  }
   if (!ready) glow(c, colorOf(e.col), e.x, e.y, 46, 0.25 + 0.1 * Math.sin(t / 400));
   if (ready) glow(c, colorOf(e.col), e.x, e.y, 70 * s, 0.5);
   if (hl){ glow(c, '#ffffff', e.x, e.y, 90, 0.55); c.strokeStyle = '#fff'; c.lineWidth = 3; c.beginPath(); c.arc(e.x, e.y, V.END_R + 7 + Math.sin(t / 80) * 1.5, 0, Math.PI * 2); c.stroke(); }
