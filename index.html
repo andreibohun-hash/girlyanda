@@ -102,10 +102,15 @@ button.ghost{background:transparent;color:var(--muted);margin-top:10px;font-weig
 //   • коробка: кусок из неё ложится рядом в стопку; верхний кусок стопки играется как открытый кусок стола.
 //   • свет двора дошёл до цели уровня — победа (сразу, стол разбирать не нужно);
 //     цель не набрана, а продолжать нечем (стол пуст или ходов нет) — проигрыш.
+// Механики уровней 11–30 (LEVELS[].mods): золотая лампа (кольцо с ней ×2 света), белая лампа (подходит к любому цвету),
+// перегоревшая (её куски светят только в кольце из BURNT_RING+), мигающая (цвет лампы меняется каждый ход, пока кусок на столе),
+// птица на тросе (с её стороны цеплять нельзя; после каждого кольца перелетает на другой конец).
 // Контракт для sim.mjs/test.mjs: CFG, LEVELS, LAYOUTS, mulberry32, createState, legalMoves, applyMove,
 // undoMove, isWin, isLose, isDone, solve, bestPlay, randomRun, noviceRun, greedyRun.
 // ---------------------------------------------------------------------------
 const CFG = {
+  WILD: 9,              // «цвет» белой лампы: подходит к любому
+  BURNT_RING: 5,        // перегоревшие куски светят только в кольце не короче этого
   RING_MIN: 2,          // кольцо из двух кусков уже кольцо (один кусок замкнуться не может: у него a ≠ b)
   MAX_CHAIN: 14,        // технический предел длины (сжатие на экране); в игре до него не доходят
   TARGET_MIN: 4,        // цель уровня не меньше этого света
@@ -185,22 +190,47 @@ const LAYOUTS = {
   wave:   [[0, 4, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8], [1, 3, 5, 7]],         // 16: волна
   towers: [[1, 7], [1, 7], [0, 2, 6, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8]],    // 17: две башни
   castle: [[0, 4, 8], [1, 3, 5, 7], [2, 4, 6], [1, 3, 5, 7], [0, 2, 4, 6, 8]], // 19: замок
+  bridge: [[0, 8], [0, 2, 6, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8]],          // 15: мостик
+  lantern:[[4], [3, 5], [2, 4, 6], [3, 5], [2, 4, 6], [1, 3, 5, 7]],      // 15: фонарь
+  terrace:[[0, 2, 6, 8], [1, 3, 5, 7], [0, 2, 4, 6, 8], [1, 3, 5, 7]],    // 17: терраса
 };
 
 // Уровни — декларативная таблица. K — число цветов; ring — длины колец в плане генератора;
 // draws — сколько раз план тянет из коробки; slack — лишние куски в коробке сверх плана;
 // win — какая доля «обычных игроков» должна дойти до цели: цель = свет, который набирает эта доля.
+// seed — сид раздачи, подобранный `node sim.mjs seeds` (раздача, где обычный игрок выигрывает около win).
 const LEVELS = [
-  { n: 1,  layout: 'gate',   K: 3, ring: [3, 3], draws: 0, slack: 2, win: 1 },
-  { n: 2,  layout: 'steps',  K: 3, ring: [3, 4], draws: 0, slack: 3, win: 0.97 },
-  { n: 3,  layout: 'bench',  K: 3, ring: [3, 4], draws: 1, slack: 3, win: 0.95 },
-  { n: 4,  layout: 'roofs',  K: 4, ring: [3, 4], draws: 1, slack: 3, win: 0.9 },
-  { n: 5,  layout: 'peaks',  K: 4, ring: [3, 5], draws: 1, slack: 3, win: 0.78 },
-  { n: 6,  layout: 'arch',   K: 4, ring: [3, 5], draws: 2, slack: 2, win: 0.75 },
-  { n: 7,  layout: 'house',  K: 4, ring: [4, 5], draws: 2, slack: 2, win: 0.75 },
-  { n: 8,  layout: 'wave',   K: 5, ring: [3, 5], draws: 2, slack: 3, win: 0.75 },
-  { n: 9,  layout: 'towers', K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.78 },
-  { n: 10, layout: 'castle', K: 5, ring: [4, 6], draws: 3, slack: 2, win: 0.72 },
+  { n: 1, seed: 1000,  layout: 'gate',   K: 3, ring: [3, 3], draws: 0, slack: 2, win: 1 },
+  { n: 2, seed: 2000,  layout: 'steps',  K: 3, ring: [3, 4], draws: 0, slack: 3, win: 0.97 },
+  { n: 3, seed: 3002,  layout: 'bench',  K: 3, ring: [3, 4], draws: 1, slack: 3, win: 0.95 },
+  { n: 4, seed: 4001,  layout: 'roofs',  K: 4, ring: [3, 4], draws: 1, slack: 3, win: 0.9 },
+  { n: 5, seed: 5002,  layout: 'peaks',  K: 4, ring: [3, 5], draws: 1, slack: 3, win: 0.78 },
+  { n: 6, seed: 6003,  layout: 'arch',   K: 4, ring: [3, 5], draws: 2, slack: 2, win: 0.75 },
+  { n: 7, seed: 7000,  layout: 'house',  K: 4, ring: [4, 5], draws: 2, slack: 2, win: 0.75 },
+  { n: 8, seed: 8004,  layout: 'wave',   K: 5, ring: [3, 5], draws: 2, slack: 3, win: 0.75 },
+  { n: 9, seed: 9010,  layout: 'towers', K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.78 },
+  { n: 10, seed: 10007, layout: 'castle', K: 5, ring: [4, 6], draws: 3, slack: 2, win: 0.72 },
+  // 11–30: механики по одной (первый уровень с новой — небольшой), потом смеси. mods: gold/white/burnt/blink — сколько кусков, bird — птица
+  { n: 11, seed: 11005, layout: 'roofs',   K: 4, ring: [3, 5], draws: 1, slack: 3, win: 0.9,  mods: { gold: 1 } },
+  { n: 12, seed: 12001, layout: 'peaks',   K: 4, ring: [3, 5], draws: 1, slack: 3, win: 0.85, mods: { gold: 2 } },
+  { n: 13, seed: 13001, layout: 'bench',   K: 4, ring: [3, 5], draws: 1, slack: 3, win: 0.9,  mods: { white: 2 } },
+  { n: 14, seed: 14004, layout: 'bridge',  K: 4, ring: [3, 5], draws: 2, slack: 2, win: 0.82, mods: { white: 2, gold: 1 } },
+  { n: 15, seed: 15002, layout: 'roofs',   K: 4, ring: [4, 6], draws: 1, slack: 3, win: 0.85, mods: { burnt: 2 } },
+  { n: 16, seed: 16009, layout: 'lantern', K: 4, ring: [4, 6], draws: 2, slack: 2, win: 0.8,  mods: { burnt: 2, gold: 1 } },
+  { n: 17, seed: 17004, layout: 'peaks',   K: 4, ring: [3, 5], draws: 1, slack: 3, win: 0.85, mods: { blink: 2 } },
+  { n: 18, seed: 18001, layout: 'wave',    K: 5, ring: [3, 5], draws: 2, slack: 3, win: 0.78, mods: { blink: 2, white: 1 } },
+  { n: 19, seed: 19050, layout: 'house',   K: 4, ring: [3, 5], draws: 2, slack: 3, win: 0.82, mods: { bird: true } },
+  { n: 20, seed: 20004, layout: 'terrace', K: 5, ring: [3, 5], draws: 2, slack: 3, win: 0.75, mods: { bird: true, gold: 1 } },
+  { n: 21, seed: 21002, layout: 'castle',  K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.75, mods: { burnt: 2, white: 1, gold: 1 } },
+  { n: 22, seed: 22005, layout: 'wave',    K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.72, mods: { blink: 2, burnt: 1 } },
+  { n: 23, seed: 23005, layout: 'arch',    K: 5, ring: [3, 5], draws: 2, slack: 3, win: 0.75, mods: { bird: true, white: 2 } },
+  { n: 24, seed: 24013, layout: 'lantern', K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.72, mods: { gold: 2, blink: 2 } },
+  { n: 25, seed: 25017, layout: 'towers',  K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.7,  mods: { bird: true, burnt: 2 } },
+  { n: 26, seed: 26007, layout: 'terrace', K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.72, mods: { white: 1, blink: 2, burnt: 1 } },
+  { n: 27, seed: 27028, layout: 'bridge',  K: 5, ring: [3, 5], draws: 2, slack: 3, win: 0.72, mods: { bird: true, gold: 1, blink: 1 } },
+  { n: 28, seed: 28010, layout: 'castle',  K: 5, ring: [4, 6], draws: 3, slack: 3, win: 0.7,  mods: { burnt: 3, gold: 2, white: 1 } },
+  { n: 29, seed: 29022, layout: 'wave',    K: 5, ring: [4, 6], draws: 2, slack: 3, win: 0.7,  mods: { bird: true, blink: 2, white: 1 } },
+  { n: 30, seed: 30013, layout: 'castle',  K: 5, ring: [4, 6], draws: 3, slack: 3, win: 0.68, mods: { bird: true, gold: 2, burnt: 2, blink: 2, white: 1 } },
 ];
 
 // Геометрия раскладки: позиции в юнитах (колонка в полушагах, ряд) и кто кого накрывает.
@@ -244,26 +274,36 @@ function dealPlan(L, seed){
       const i = open[ri(open.length)]; p = pieces[i];
       gone[i] = true; done++;
     }
-    if (!chain.length){ p.a = ri(K); p.b = other(p.a); chain = [p]; continue; }
+    if (!chain.length){ p.a = ri(K); p.b = other(p.a); p.att = null; chain = [p]; continue; }
     const L0 = chain[0].a, R0 = chain[chain.length - 1].b, len = chain.length + 1;
     const toRight = len > CFG.MAX_CHAIN ? false : rnd() < 0.5;
-    if (toRight){ p.a = R0; p.b = len >= target ? L0 : other(L0); chain.push(p); }
-    else        { p.b = L0; p.a = len >= target ? R0 : other(R0); chain.unshift(p); }
+    if (toRight){ p.a = R0; p.b = len >= target ? L0 : other(L0); p.att = 'a'; chain.push(p); }
+    else        { p.b = L0; p.a = len >= target ? R0 : other(R0); p.att = 'b'; chain.unshift(p); }
     if (len >= target) closeIfReady();
   }
   closeIfReady();
   for (let k = 0; k < L.slack; k++){ const a = ri(K); box.push({ a, b: other(a) }); }
   // плановые доборы стоят в коробке по порядку сразу за стартовым; лишние — в конце
+  // механики: метки на случайных кусках стола. Белая лампа ставится на «внутреннюю» лампу (ту, что в плане касалась гирлянды),
+  // поэтому план остаётся проходимым; мигающая — на внешнюю (второй цвет случайный); птица — на случайный конец троса.
+  const M = L.mods || {}, free = pieces.map((_, i) => i);
+  const take = () => free.length ? free.splice(ri(free.length), 1)[0] : -1;
+  for (let k = 0; k < (M.gold || 0); k++){ const i = take(); if (i >= 0) pieces[i].gold = true; }
+  for (let k = 0; k < (M.burnt || 0); k++){ const i = take(); if (i >= 0) pieces[i].burnt = true; }
+  for (let k = 0; k < (M.white || 0); k++){ const i = take(); if (i >= 0) pieces[i][pieces[i].att || 'a'] = CFG.WILD; }
+  for (let k = 0; k < (M.blink || 0); k++){ const i = take(); if (i < 0) continue; const q = pieces[i], side = q.att === 'a' ? 'b' : 'a'; q.blink = { side, alt: other(q[side]) }; }
+  const bird = M.bird ? (rnd() < 0.5 ? 'L' : 'R') : null;
   const planScore = rings.reduce((s, n) => s + n * n, 0);
-  return { pieces, box, planScore, planRings: rings, seed };
+  return { pieces, box, planScore, planRings: rings, seed, bird };
 }
 
 function stateFromDeal(li, deal){
   const box = deal.box.map((p, j) => ({ a: p.a, b: p.b, id: 'B' + j }));
-  const pieces = deal.pieces.map((p, i) => ({ r: p.r, c: p.c, coveredBy: p.coveredBy, a: p.a, b: p.b, id: 'T' + i }));
+  const pieces = deal.pieces.map((p, i) => ({ r: p.r, c: p.c, coveredBy: p.coveredBy, a: p.a, b: p.b, id: 'T' + i,
+    gold: !!p.gold, burnt: !!p.burnt, blink: p.blink ? { side: p.blink.side, alt: p.blink.alt } : null }));
   return {
     li, K: LEVELS[li] ? LEVELS[li].K : 3, seed: deal.seed, pieces, gone: new Array(pieces.length).fill(false),
-    box, boxIdx: 1, hand: [], chain: [box[0]], rings: [], score: 0, dropped: 0, moves: 0, draws: 0,
+    box, boxIdx: 1, hand: [], chain: [box[0]], rings: [], score: 0, dropped: 0, moves: 0, draws: 0, bird: deal.bird || null,
     target: deal.target === undefined ? Infinity : deal.target, maxScore: deal.maxScore || 0, planRings: deal.planRings, hist: [],
   };
 }
@@ -271,6 +311,8 @@ function stateFromDeal(li, deal){
 // Цель уровня: столько света, сколько набирает доля L.win «обычных игроков» (casualRunState), доигрывающих стол до конца.
 // Не больше максимума (bestPlay) и не меньше TARGET_MIN. Всё детерминировано: уровень воспроизводим по номеру.
 const DEAL_CACHE = new Map();
+// насколько раздача далека от плана: доля побед обычного игрока (±6% — норма) и доля стола, оставшаяся к победе (≤ 35%)
+function dealGap(L, rate, leftK){ return Math.max(0, Math.abs(rate - L.win) - 0.06) + Math.max(0, leftK - 0.35); }
 function targetFor(levelIndex, deal){
   const L = LEVELS[levelIndex], s0 = stateFromDeal(levelIndex, { ...deal, target: Infinity });
   const max = bestPlay(s0).score, scores = [];
@@ -283,15 +325,17 @@ function createState(levelIndex){
   const L = LEVELS[levelIndex];
   if (!DEAL_CACHE.has(levelIndex)){
     let best = null, bestGap = Infinity;
-    for (let tr = 0; tr < CFG.SEED_TRIES; tr++){
-      const deal = dealPlan(L, 1000 * L.n + tr), tg = targetFor(levelIndex, deal);
+    // сид раздачи записан в уровне (подобран `node sim.mjs seeds`); без него — перебор SEED_TRIES сидов прямо здесь
+    const seeds = L.seed !== undefined ? [L.seed] : Array.from({ length: CFG.SEED_TRIES }, (_, tr) => 1000 * L.n + tr);
+    for (const seed of seeds){
+      const deal = dealPlan(L, seed), tg = targetFor(levelIndex, deal);
       deal.maxScore = tg.max; deal.target = tg.target;
       // проверка на других сидах: доля побед обычного игрока и сколько кусков остаётся к победе
       const s0 = stateFromDeal(levelIndex, deal); let w = 0, left = 0;
       for (let k = 0; k < CFG.CHECK_RUNS; k++){ const r = casualRunState(s0, 9973 * k + 17); if (r.win){ w++; left += r.left; } }
       const rate = w / CFG.CHECK_RUNS, leftK = w ? left / w / s0.pieces.length : 1;
-      const gap = Math.max(0, Math.abs(rate - L.win) - 0.06) + Math.max(0, leftK - 0.35);
-      if (gap < bestGap){ best = deal; bestGap = gap; }
+      const gap = dealGap(L, rate, leftK);
+      if (gap < bestGap){ best = deal; bestGap = gap; best.check = { rate, leftK }; }
       if (gap === 0) break;
     }
     DEAL_CACHE.set(levelIndex, best);
@@ -305,6 +349,16 @@ function cloneState(s){
 const endsOf = (s) => s.chain.length ? { L: s.chain[0].a, R: s.chain[s.chain.length - 1].b } : null;
 function isOpen(s, i){ return !s.gone[i] && s.pieces[i].coveredBy.every(j => s.gone[j]); }
 function openPieces(s){ const o = []; for (let i = 0; i < s.pieces.length; i++) if (isOpen(s, i)) o.push(i); return o; }
+// Цвета куска с учётом мигания: мигающая лампа на чётных ходах — свой цвет, на нечётных — второй
+function colA(s, p){ return p.blink && p.blink.side === 'a' && s.moves % 2 ? p.blink.alt : p.a; }
+function colB(s, p){ return p.blink && p.blink.side === 'b' && s.moves % 2 ? p.blink.alt : p.b; }
+const match = (x, y) => x === y || x === CFG.WILD || y === CFG.WILD;   // белая лампа подходит к любому цвету
+// Свет кольца: n² (перегоревшие куски в кольце короче BURNT_RING не считаются), × (1 + число золотых)
+function ringValue(items){
+  const n = items.length, burnt = items.filter(p => p.burnt).length, gold = items.filter(p => p.gold).length;
+  const lit = n >= CFG.BURNT_RING ? n : n - burnt;
+  return lit * lit * (1 + gold);
+}
 // Кусок по индексу: i ≥ 0 — стол, HAND (−1) — верхний кусок стопки у коробки
 const HAND = -1;
 const pieceOf = (s, i) => i === HAND ? s.hand[s.hand.length - 1] : s.pieces[i];
@@ -315,15 +369,20 @@ function sidesFor(s, i){
   if (!e) return ['S'];
   if (s.chain.length >= CFG.MAX_CHAIN) return [];
   const out = [];
-  if (p.a === e.R) out.push('R');
-  if (p.b === e.L) out.push('L');
+  if (s.bird !== 'R' && match(colA(s, p), e.R)) out.push('R');
+  if (s.bird !== 'L' && match(colB(s, p), e.L)) out.push('L');
   return out;
 }
 // Замкнёт ли ход кольцо и какой длины (для подсказок и превью оболочки): 0 — нет
 function closesRing(s, i, side){
   if (side === 'S' || !s.chain.length) return 0;
-  const p = pieceOf(s, i), e = endsOf(s), L = side === 'L' ? p.a : e.L, R = side === 'R' ? p.b : e.R;
-  return L === R && s.chain.length + 1 >= CFG.RING_MIN ? s.chain.length + 1 : 0;
+  const p = pieceOf(s, i), e = endsOf(s), L = side === 'L' ? colA(s, p) : e.L, R = side === 'R' ? colB(s, p) : e.R;
+  return match(L, R) && s.chain.length + 1 >= CFG.RING_MIN ? s.chain.length + 1 : 0;
+}
+// Сколько света даст кольцо, если ход его замкнёт (0 — не замкнёт)
+function closeValue(s, i, side){
+  if (!closesRing(s, i, side)) return 0;
+  const p = pieceOf(s, i); return ringValue(side === 'L' ? [p].concat(s.chain) : s.chain.concat([p]));
 }
 // Ходы: { t:'put', i, side } | { t:'draw' }
 function legalMoves(s){
@@ -334,10 +393,14 @@ function legalMoves(s){
   return out;
 }
 function ringScore(n){ return n * n; }
-function doClose(n){ const len = n.chain.length; n.rings.push(len); n.score += ringScore(len); n.chain = []; return len; }
+function doClose(n){
+  const len = n.chain.length; n.rings.push(len); n.score += ringValue(n.chain); n.chain = [];
+  if (n.bird) n.bird = n.bird === 'L' ? 'R' : 'L';      // птица перелетает на другой конец
+  return len;
+}
 function applyMove(s, m){
   const n = cloneState(s);
-  n.hist.push({ gone: s.gone, hand: s.hand, chain: s.chain, rings: s.rings, score: s.score, dropped: s.dropped, boxIdx: s.boxIdx, moves: s.moves, draws: s.draws });
+  n.hist.push({ gone: s.gone, hand: s.hand, chain: s.chain, rings: s.rings, score: s.score, dropped: s.dropped, boxIdx: s.boxIdx, moves: s.moves, draws: s.draws, bird: s.bird });
   n.moves++;
   if (m.t === 'draw'){                                  // кусок из коробки — в стопку рядом, гирлянда не трогается
     if (n.boxIdx >= n.box.length) return n;
@@ -348,18 +411,19 @@ function applyMove(s, m){
     let p;
     if (m.i === HAND) p = n.hand.pop();
     else { p = n.pieces[m.i]; n.gone[m.i] = true; }
+    if (p.blink) p = { ...p, a: colA(s, p), b: colB(s, p), blink: null };   // мигающая застывает в том цвете, в каком её взяли
     if (m.side === 'S' || !n.chain.length) n.chain = [p];
     else if (m.side === 'R') n.chain.push(p);
     else n.chain.unshift(p);
     const e = endsOf(n);
-    if (n.chain.length >= CFG.RING_MIN && e.L === e.R) doClose(n);   // концы сошлись — кольцо замыкается само
+    if (n.chain.length >= CFG.RING_MIN && match(e.L, e.R)) doClose(n);   // концы сошлись — кольцо замыкается само
   }
   return n;
 }
 function undoMove(s){
   if (!s.hist.length) return s;
   const n = cloneState(s), h = n.hist.pop();
-  Object.assign(n, { gone: h.gone.slice(), hand: h.hand.slice(), chain: h.chain.slice(), rings: h.rings.slice(), score: h.score, dropped: h.dropped, boxIdx: h.boxIdx, moves: h.moves, draws: h.draws });
+  Object.assign(n, { gone: h.gone.slice(), hand: h.hand.slice(), chain: h.chain.slice(), rings: h.rings.slice(), score: h.score, dropped: h.dropped, boxIdx: h.boxIdx, moves: h.moves, draws: h.draws, bird: h.bird });
   return n;
 }
 function isWin(s){ return s.score >= s.target; }
@@ -367,7 +431,7 @@ function isWin(s){ return s.score >= s.target; }
 function isDone(s){ return (s.gone.every(Boolean) && !s.hand.length) || legalMoves(s).filter(m => m.t === 'put').length === 0 && s.boxIdx >= s.box.length; }
 function isLose(s){ return !isWin(s) && isDone(s); }
 
-const stateKey = (s) => { const e = endsOf(s); return s.gone.map(g => g ? 1 : 0).join('') + '|' + s.boxIdx + '|' + s.hand.map(p => p.id).join(',') + '|' + (e ? e.L + ',' + e.R + ',' + s.chain.length : '-'); };
+const stateKey = (s) => { const e = endsOf(s); return s.gone.map(g => g ? 1 : 0).join('') + '|' + s.boxIdx + '|' + s.hand.map(p => p.id).join(',') + '|' + (e ? e.L + ',' + e.R + ',' + s.chain.length + ',' + s.chain.filter(p => p.gold).length + ',' + s.chain.filter(p => p.burnt).length : '-') + '|' + (s.moves % 2) + (s.bird || ''); };
 // Солвер: путь до цели (полная информация: порядок коробки известен). DFS, проигрышные состояния помнятся вместе со светом.
 function solve(s0){
   const dead = new Set(); let nodes = 0;
@@ -498,7 +562,7 @@ const fxRnd = () => mulberry32(G.fxSeed++ * 7919);
 
 // --- арт: файлы по имени (§11) ---
 const COLOR_NAMES = ['red', 'blue', 'green', 'yellow', 'violet', 'orange'];
-const ART_FILES = ['bg-dark.jpg', 'bg-lit.jpg', 'card-face.png', 'card-back.png', 'box-full.png', 'box-empty.png', 'bulb-on-white.png', 'bulb-off-white.png']
+const ART_FILES = ['bg-dark.jpg', 'bg-lit.jpg', 'card-face.png', 'card-back.png', 'box-full.png', 'box-empty.png', 'bulb-on-white.png', 'bulb-off-white.png', 'bird-sit.png', 'bird-fly.png', 'spark-gold.png']
   .concat(COLOR_NAMES.flatMap(c => ['bulb-on-' + c + '.png', 'bulb-off-' + c + '.png', 'plug-' + c + '.png']));
 const ART = {};
 function loadArt(){
@@ -565,6 +629,7 @@ const Sound = {
     this.hiss(260, 'highpass', 6000, 0.05, 0.06);                               // блёстки
     log('sound', 'attach', 'len=' + len);
   },
+  chirp(){ this.tone(2600, 70, 'sine', 0.07, 0, 3500); this.tone(2900, 90, 'sine', 0.06, 0.09, 3900); log('sound', 'chirp'); },
   bad(){ this.tone(150, 170, 'triangle', 0.2, 0, 105); this.hiss(60, 'lowpass', 500, 0.15); log('sound', 'bad'); },
   ready(){ this.bell(this.note(7), 0, 0.08); this.bell(this.note(9), 0.1, 0.08); this.bell(this.note(11), 0.2, 0.07); log('sound', 'ready'); },
   ring(n){                             // замыкание: щелчок, вихрь колокольчиков по кругу, тёплый аккорд
@@ -702,13 +767,19 @@ function burst(x, y, cols, n, speed, opt){
 // --- ходы оболочки ---
 function startLevel(li){
   G.s = createState(li); G.save.level = li; save();
-  Object.assign(G, { joins: [], wave: null, vis: {}, table: {}, curls: [], wreaths: [], parts: [], pops: [], drag: null, ending: 0, coach: null, boxNudge: 0, winGlow: 0, handFly: null });
+  Object.assign(G, { birdFly: null, birdPeck: 0, joins: [], wave: null, vis: {}, table: {}, curls: [], wreaths: [], parts: [], pops: [], drag: null, ending: 0, coach: null, boxNudge: 0, winGlow: 0, handFly: null });
   for (let k = 0; k < 4; k++) delete G['fw' + k];
   G.t = now(); layoutGeo(); litDirty = true; meterSet(0, G.t);
   const t = G.t; relayout(t); G.vis[G.s.chain[0].id].lit0 = t + 250;
   scheduleHint(t);
   log('event', 'level.start', 'level=' + (li + 1) + ' seed=' + G.s.seed + ' pieces=' + G.s.pieces.length + ' box=' + (G.s.box.length - 1) + ' target=' + G.s.target + ' max=' + G.s.maxScore);
   if (li === 0 && !G.save.tut.drag) coach(LAMPS ? 'Тяни кусок к лампе того же цвета' : 'Тяни кусок к концу того же цвета', 0);
+  // первая встреча с механикой — короткая подсказка
+  const MECH_TIPS = { gold: 'Золотой провод: кольцо с ним светит вдвое', white: 'Белая лампа подходит к любому цвету',
+    burnt: 'Перегоревшие загорятся только в кольце из ' + CFG.BURNT_RING + '+', blink: 'Мигающая лампа меняет цвет каждый ход',
+    bird: 'Птица не даёт цеплять со своей стороны. После кольца перелетит' };
+  const mods = LEVELS[li].mods || {};
+  for (const key of ['bird', 'blink', 'burnt', 'white', 'gold']) if (mods[key] && !G.save.tut['m_' + key]){ G.save.tut['m_' + key] = 1; save(); coach(MECH_TIPS[key], 5200); break; }
   goto('game'); hud();
 }
 function hud(){
@@ -733,6 +804,11 @@ function doMove(m, from){
   scheduleHint(t); G.boxNudge = 0;
   log('input', m.t, m.t === 'put' ? 'piece=' + m.i + ' side=' + m.side : '');
   const closed = G.s.rings.length > prev.rings.length;
+  G.lastMoveT = t;
+  if (prev.bird && G.s.bird !== prev.bird){                // птица перелетает на другой конец — когда кольцо начнёт сворачиваться
+    G.birdFly = { from: birdPos(prev, t), toSide: G.s.bird, t0: t + dur(CFG.FLY_MS + CFG.CLOSE_HOLD_MS), dur: dur(800) };
+    setTimeout(() => Sound.chirp(), (CFG.FLY_MS + CFG.CLOSE_HOLD_MS) / G.timeScale);
+  }
 
   if (m.t === 'put'){
     const p = pieceOf(prev, m.i), start = from || (() => { const q = pieceXY(m.i, prev); return { x: q.x + PW() / 2, y: q.y + PH() / 2 }; })();
@@ -787,14 +863,15 @@ function startCurl(items, t, newId, from){
   items.forEach(p => delete G.vis[p.id]);
   const lead = dur(CFG.FLY_MS + CFG.CLOSE_HOLD_MS);
   G.curls.push({ items, pos: tg, olds, lit0, newId, from, tc: t, t0: t + lead, slot, n });
-  G.pops.push({ x: W / 2, y: geo.gm - 34, text: '+' + ringScore(n), t0: t + dur(CFG.FLY_MS + 60), big: n >= 5 });
+  const val = ringValue(items), golds = items.filter(p => p.gold).length;
+  G.pops.push({ x: W / 2, y: geo.gm - 34, text: '+' + val + (golds ? '  ×' + (1 + golds) : ''), t0: t + dur(CFG.FLY_MS + 60), big: n >= 5 || golds > 0, gold: golds > 0 });
   setTimeout(() => {
     Sound.ring(n); buzz([15, 30, 25]);
     G.shake = { t0: now(), amp: 3 + Math.min(5, n * 0.6) };
     const cols = items.flatMap(p => [colorOf(p.a), colorOf(p.b)]);
     burst(W / 2, geo.gm + 6, cols.concat([PAL.warm]), 26 + n * 4, 260, { life: 900, g: 160, size: 10, delay: dur(CFG.CURL_MS * 0.8) });
   }, (CFG.FLY_MS + CFG.CLOSE_HOLD_MS) / G.timeScale);
-  log('fx.start', 'curl', 'n=' + n + ' score=' + ringScore(n));
+  log('fx.start', 'curl', 'n=' + n + ' score=' + val);
   if (!G.save.tut.ring){ G.save.tut.ring = 1; setTimeout(() => coach('Кольцо! Чем длиннее, тем светлее', 3200), (CFG.FLY_MS + CFG.CLOSE_HOLD_MS + CFG.CURL_MS) / G.timeScale); }
 }
 function finishEnding(){
@@ -824,7 +901,16 @@ function tapPiece(i, from){
   if (!side){ shake(i); return false; }
   return doMove({ t: 'put', i, side }, from);
 }
-function shake(i){ const p = pieceOf(G.s, i); if (!p) return; G.table[p.id] = Object.assign(G.table[p.id] || {}, { shake0: now() }); Sound.bad(); buzz(20); log('fx.start', 'shake', 'piece=' + i); }
+function shake(i){
+  const p = pieceOf(G.s, i); if (!p) return;
+  G.table[p.id] = Object.assign(G.table[p.id] || {}, { shake0: now() }); Sound.bad(); buzz(20); log('fx.start', 'shake', 'piece=' + i);
+  // подошёл бы с той стороны, где сидит птица — птица машет крыльями и чирикает
+  const e = endsOf(G.s);
+  if (G.s.bird && e && (G.s.bird === 'R' ? match(colA(G.s, p), e.R) : match(colB(G.s, p), e.L))){
+    G.birdPeck = now(); Sound.chirp(); log('fx.start', 'bird.peck');
+    if (!G.save.tut.birdPeck){ G.save.tut.birdPeck = 1; toast('Птица не пускает — после кольца перелетит'); }
+  }
+}
 function tapGarland(){                         // кольцо замыкается само; тап по гирлянде — только качнуть
   if (!G.s || G.screen !== 'game' || G.ending || !G.s.chain.length) return;
   G.swing = { t0: now(), amp: 5 }; Sound.pick();
@@ -928,7 +1014,7 @@ document.addEventListener('visibilitychange', () => { G.paused = document.hidden
 // --- рендер: всё в canvas, цвета из CSS-переменных (§9). Рисование — именованные функции (§11). ---
 const PAL = {};
 function readPalette(){ const cs = getComputedStyle(document.documentElement); for (const k of ['c0','c1','c2','c3','c4','c5','warm','wire','wire-hi','accent','ink-dark','sky1','yard1','yard2','table','table-edge','tile','tile-edge','tile-back','glass']) PAL[k] = cs.getPropertyValue('--' + k).trim(); }
-const colorOf = (k) => PAL['c' + k];
+const colorOf = (k) => k === CFG.WILD ? PAL.warm : PAL['c' + k];
 const GLOW = {};
 // glowSprite(color): заранее отрисованное радиальное свечение, 64×64; рисуется через 'lighter'
 function glowSprite(color){
@@ -959,7 +1045,7 @@ function drawPlug(c, k, x, y, r){
 }
 // drawBulb: лампочка, висящая цоколем вверх в точке (x, y); col — индекс цвета или 'white'; lit 0..1
 function drawBulb(c, x, y, col, lit, r, glowK){
-  const name = typeof col === 'number' ? COLOR_NAMES[col] : 'white', hex = typeof col === 'number' ? colorOf(col) : PAL.warm;
+  const name = typeof col === 'number' && col !== CFG.WILD ? COLOR_NAMES[col] : 'white', hex = typeof col === 'number' ? colorOf(col) : PAL.warm;
   if (lit > 0.02) glow(c, hex, x, y + r * 0.9, r * 9 * (0.7 + 0.3 * lit), 0.75 * lit * (glowK === undefined ? 1 : glowK));
   const im = spr((lit > 0.5 ? 'bulb-on-' : 'bulb-off-') + name);
   if (im){ const h = r * 3.1, w = h * im.width / im.height; c.drawImage(im, x - w / 2, y - h * 0.12, w, h); return; }
@@ -970,22 +1056,51 @@ function drawBulb(c, x, y, col, lit, r, glowK){
 // По умолчанию — разъёмы со значками формы и три лампы. Ядро и уровни одни и те же.
 const LAMPS = (() => { try { return new URLSearchParams(location.search).get('skin') === 'lamps'; } catch (e) { return false; } })();
 // pieceBulbs: цвета ламп куска; bulbU — где они на проводе (доля длины)
-const pieceBulbs = (p) => LAMPS ? [p.a, p.b] : [p.a, 'white', p.b];
+const shownA = (p) => G.s && p.blink ? colA(G.s, p) : p.a, shownB = (p) => G.s && p.blink ? colB(G.s, p) : p.b;   // мигающая — текущим цветом
+const pieceBulbs = (p) => LAMPS ? [shownA(p), shownB(p)] : [shownA(p), 'white', shownB(p)];
 const bulbU = (j) => LAMPS ? [0.2, 0.8][j] : 0.25 + j * 0.25;
 const NB = LAMPS ? 2 : 3;
 // drawWire: витой провод от (x1,y1) до (x2,y2) с провисом sag; возвращает функцию точки на проводе u∈[0,1]
-function drawWire(c, x1, y1, x2, y2, sag, w){
+function drawWire(c, x1, y1, x2, y2, sag, w, gold){
   const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 + sag;
   c.lineCap = 'round';
-  c.strokeStyle = PAL.wire; c.lineWidth = w || 3; c.beginPath(); c.moveTo(x1, y1); c.quadraticCurveTo(mx, my, x2, y2); c.stroke();
-  c.strokeStyle = PAL['wire-hi']; c.lineWidth = (w || 3) * 0.35; c.beginPath(); c.moveTo(x1, y1 - 0.6); c.quadraticCurveTo(mx, my - 0.6, x2, y2 - 0.6); c.stroke();
+  c.strokeStyle = gold ? '#c8901e' : PAL.wire; c.lineWidth = (w || 3) * (gold ? 1.35 : 1); c.beginPath(); c.moveTo(x1, y1); c.quadraticCurveTo(mx, my, x2, y2); c.stroke();
+  c.strokeStyle = gold ? '#ffe9a0' : PAL['wire-hi']; c.lineWidth = (w || 3) * 0.35; c.beginPath(); c.moveTo(x1, y1 - 0.6); c.quadraticCurveTo(mx, my - 0.6, x2, y2 - 0.6); c.stroke();
   return (u) => ({ x: (1 - u) * (1 - u) * x1 + 2 * (1 - u) * u * mx + u * u * x2, y: (1 - u) * (1 - u) * y1 + 2 * (1 - u) * u * my + u * u * y2 });
 }
 // drawSegment: кусок на гирлянде: провод с тремя лампочками; lit — массив яркостей на лампочку
-function drawSegment(c, p, x1, y1, x2, y2, lit, br, extraSag){
-  const at = drawWire(c, x1, y1, x2, y2, 4 + br * 0.4 + (extraSag || 0), 3), out = [];
-  pieceBulbs(p).forEach((col, k) => { const q = at(bulbU(k)); drawBulb(c, q.x, q.y + 1, col, lit[k], br); out.push({ x: q.x, y: q.y + 1 }); });
+function drawSegment(c, p, x1, y1, x2, y2, lit, br, extraSag, burntLit){
+  const at = drawWire(c, x1, y1, x2, y2, 4 + br * 0.4 + (extraSag || 0), 3, p.gold), out = [];
+  pieceBulbs(p).forEach((col, k) => {
+    const q = at(bulbU(k)), l = p.burnt && !burntLit ? 0 : lit[k];
+    drawBulb(c, q.x, q.y + 1, col, l, br); if (p.burnt && !burntLit) drawSoot(c, q.x, q.y + 1, br);
+    out.push({ x: q.x, y: q.y + 1 });
+  });
+  if (p.gold) drawGoldGlint(c, at(0.5).x, at(0.5).y, br);
   return out;
+}
+// drawSoot: копоть и трещинка на перегоревшей лампе (лампа в точке x,y цоколем вверх, радиус r)
+function drawSoot(c, x, y, r){
+  const cy = y + r * 1.35;
+  const g = c.createRadialGradient(x, cy, 0, x, cy, r * 1.1); g.addColorStop(0, 'rgba(15,10,8,.75)'); g.addColorStop(1, 'rgba(15,10,8,0)');
+  c.fillStyle = g; c.beginPath(); c.arc(x, cy, r * 1.1, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = Math.max(1, r * 0.12); c.beginPath();
+  c.moveTo(x - r * 0.35, cy - r * 0.45); c.lineTo(x - r * 0.05, cy - r * 0.1); c.lineTo(x - r * 0.25, cy + r * 0.15); c.lineTo(x + r * 0.15, cy + r * 0.5); c.stroke();
+}
+// drawGoldGlint: блик-звёздочка на золотом проводе; мерцает от времени
+function drawGoldGlint(c, x, y, r){
+  const t = G.t || now(), k = 0.5 + 0.5 * Math.sin(t / 220 + x * 0.1), s = r * (0.9 + 0.6 * k), im = spr('spark-gold');
+  glow(c, '#ffd75a', x, y, r * 6 * (0.6 + k * 0.6), 0.5);
+  if (im){ c.drawImage(im, x - s, y - s, s * 2, s * 2); return; }
+  c.fillStyle = '#fff6c8'; c.beginPath(); c.moveTo(x, y - s); c.lineTo(x + s * 0.25, y - s * 0.25); c.lineTo(x + s, y); c.lineTo(x + s * 0.25, y + s * 0.25);
+  c.lineTo(x, y + s); c.lineTo(x - s * 0.25, y + s * 0.25); c.lineTo(x - s, y); c.lineTo(x - s * 0.25, y - s * 0.25); c.closePath(); c.fill();
+}
+// drawBlinkHalo: у мигающей лампы — пульсирующий ореол второго цвета, в который она переключится на следующем ходу
+function drawBlinkHalo(c, x, y, r, altCol, t){
+  const k = 0.5 + 0.5 * Math.sin(t / 160), cy = y + r * 1.25;
+  glow(c, colorOf(altCol), x, cy, r * 5, 0.45 + 0.35 * k);
+  c.save(); c.strokeStyle = colorOf(altCol); c.lineWidth = 2; c.setLineDash([3, 3]); c.lineDashOffset = -t / 40;
+  c.beginPath(); c.arc(x, cy, r * 1.45, 0, Math.PI * 2); c.stroke(); c.restore();
 }
 // drawPiece: кусок на столе (PIECE_W×PIECE_H, масштаб k): картонка-плашка, провод, три лампочки, разъёмы по краям.
 // back — рубашка (накрыт: виден моток провода)
@@ -995,16 +1110,27 @@ function drawPiece(c, p, x, y, back, alpha, lift, k){
   c.translate(x, y); c.scale(k || geo.tk, k || geo.tk);
   if (lift){ c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.roundRect(5, 9, w, h, 10); c.fill(); }
   const card = spr(back ? 'card-back' : 'card-face');
+  if (p.gold && !back) glow(c, '#ffd24a', w / 2, h / 2, w * 2.2, 0.45 + 0.15 * Math.sin((G.t || now()) / 300));   // золотой кусок сияет
   if (card) c.drawImage(card, -3, -3, w + 6, h + 6);
   else { c.fillStyle = back ? PAL['tile-back'] : PAL.tile; c.strokeStyle = PAL['tile-edge']; c.lineWidth = 1.5; c.beginPath(); c.roundRect(0, 0, w, h, 10); c.fill(); c.stroke(); }
+  if (p.gold && !back){ c.strokeStyle = '#ffd24a'; c.lineWidth = 3; c.beginPath(); c.roundRect(1, 1, w - 2, h - 2, 9); c.stroke(); }
+  const tt = G.t || now(), blinkAlt = p.blink && G.s ? (G.s.moves % 2 ? p[p.blink.side] : p.blink.alt) : null;
   if (!back && LAMPS){                            // «лампа к лампе»: две крупные лампы на концах провода, горят вполсилы — цвет читается
-    const at = drawWire(c, 7, 10, w - 7, 10, 6, 3);
-    [0.17, 0.83].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0.6, 12.5, 0.3); });
+    const at = drawWire(c, 7, 10, w - 7, 10, 6, 3, p.gold), lit = p.burnt ? 0 : 0.6;
+    [0.17, 0.83].forEach((u, j) => {
+      const q = at(u);
+      if (p.blink && ['a', 'b'][j] === p.blink.side) drawBlinkHalo(c, q.x, q.y - 1, 12.5, blinkAlt, tt);
+      drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], lit, 12.5, 0.3);
+      if (p.burnt) drawSoot(c, q.x, q.y - 1, 12.5);
+    });
+    if (p.gold) drawGoldGlint(c, w / 2, 14, 7);
   } else if (!back){
-    const at = drawWire(c, 17, 18, w - 17, 18, 16, 2.6);
-    [0.3, 0.5, 0.7].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], 0.6, 5.8, 0.3); });
-    drawPlug(c, p.a, 17, 18, 14);
-    drawPlug(c, p.b, w - 17, 18, 14);
+    const at = drawWire(c, 17, 18, w - 17, 18, 16, 2.6, p.gold), lit = p.burnt ? 0 : 0.6;
+    [0.3, 0.5, 0.7].forEach((u, j) => { const q = at(u); drawBulb(c, q.x, q.y - 1, pieceBulbs(p)[j], lit, 5.8, 0.3); if (p.burnt) drawSoot(c, q.x, q.y - 1, 5.8); });
+    if (p.blink) drawBlinkHalo(c, p.blink.side === 'a' ? 17 : w - 17, 18 - 17, 11, blinkAlt, tt);
+    drawPlug(c, shownA(p), 17, 18, 14);
+    drawPlug(c, shownB(p), w - 17, 18, 14);
+    if (p.gold) drawGoldGlint(c, w / 2, 40, 6);
   } else if (!card){
     c.strokeStyle = PAL.wire; c.lineWidth = 2.2; c.beginPath();
     for (let a = 0; a < 14; a += 0.3){ const r = 3 + a * 1.0, px = w / 2 + r * Math.cos(a) * 1.4, py = h / 2 + r * Math.sin(a) * 0.6; a ? c.lineTo(px, py) : c.moveTo(px, py); }
@@ -1064,9 +1190,10 @@ function drawWreath(c, items, x, y, R, t, alpha){
   c.save(); c.globalAlpha = alpha === undefined ? 1 : alpha;
   c.strokeStyle = PAL.wire; c.lineWidth = 2.4; c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.stroke();
   const m = items.length * NB;
+  const lit = items.length >= CFG.BURNT_RING;            // перегоревшие светят только в кольце из BURNT_RING+
   items.forEach((p, k) => pieceBulbs(p).forEach((col, j) => {
     const idx = k * NB + j, a = -Math.PI / 2 + (idx / m) * Math.PI * 2, tw = 0.7 + 0.3 * Math.sin(t / 260 - idx * 0.8);
-    drawBulb(c, x + R * Math.cos(a), y + R * Math.sin(a) - 2, col, tw, 3.3);
+    drawBulb(c, x + R * Math.cos(a), y + R * Math.sin(a) - 2, col, p.burnt && !lit ? 0 : tw, 3.3);
   }));
   c.restore();
 }
@@ -1080,12 +1207,12 @@ function drawCurl(c, cu, t){
   cu.items.forEach((p, i) => { const q = cu.pos[i]; pieceBulbs(p).forEach((col, j) => {
     const lx = q.x + q.w * bulbU(j), ly = sagY(lx) + 6, idx = i * NB + j, a = -Math.PI / 2 + (idx / m) * Math.PI * 2 + spin;
     const rx = cx + R * Math.cos(a), ry = cy + R * Math.sin(a);
-    pts.push({ x: lx + (rx - lx) * k1, y: ly + (ry - ly) * k1, col });
+    pts.push({ x: lx + (rx - lx) * k1, y: ly + (ry - ly) * k1, col, dark: p.burnt && n < CFG.BURNT_RING });
   }); });
   c.strokeStyle = PAL.wire; c.lineWidth = 2.6; c.beginPath(); pts.forEach((q, i) => i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y)); if (k1 > 0.95) c.closePath(); c.stroke();
   const flash = Math.max(0, 1 - Math.abs(k1 - 1) * 5) * (1 - k2);
   if (k1 > 0.8) glow(c, PAL.warm, cx, cy, R0 * 6 * (1 + flash), 0.55 * (1 - k2 * 0.7));
-  pts.forEach((q, i) => drawBulb(c, q.x, q.y - 2, q.col, Math.min(1, 0.8 + flash + 0.2 * Math.sin(t / 60 - i)), 3.3 + (1 - k2) * 2.4));
+  pts.forEach((q, i) => drawBulb(c, q.x, q.y - 2, q.col, q.dark ? 0 : Math.min(1, 0.8 + flash + 0.2 * Math.sin(t / 60 - i)), 3.3 + (1 - k2) * 2.4));
 }
 // drawClosing: фаза до сворачивания: старые куски сдвигаются на новые места, замыкающий кусок летит со стола и встаёт в стык;
 // после посадки — вспышка в стыке, огни бегут по всей гирлянде, концы одного цвета пульсируют
@@ -1102,7 +1229,7 @@ function drawClosing(c, cu, t){
       const on = Math.max(0, Math.min(1, (t - cu.lit0[k] - j * dur(CFG.BULB_STEP_MS * 0.6)) / dur(70)));
       return landed ? Math.max(on, 0.55 + 0.45 * Math.sin(t / 60 - (k * NB + j) * 0.8)) : on;   // огни бегут по кругу
     });
-    const bp = drawSegment(c, p, x1, y1, x2, y2, lit, br);
+    const bp = drawSegment(c, p, x1, y1, x2, y2, lit, br, 0, landed && n >= CFG.BURNT_RING);
     if (k > 0 && !LAMPS) drawPlug(c, p.a, x1, y1, Math.max(5, br * 0.75));
     if (k === 0) endBulbs.L = { ...bp[0], br, col: p.a };
     if (k === n - 1) endBulbs.R = { ...bp[bp.length - 1], br, col: p.b };
@@ -1121,6 +1248,44 @@ function drawClosing(c, cu, t){
     const kk = ease((t - cu.tc) / dur(CFG.FLY_MS)), tx = flying.tg.x + flying.tg.w / 2, ty = sagY(tx), arc = Math.sin(kk * Math.PI) * 30;
     drawPiece(c, flying.p, cu.from.x + (tx - cu.from.x) * kk - PW() / 2, cu.from.y + (ty - cu.from.y) * kk - arc - PH() / 2, false, 1, true, geo.tk * (1 + 0.15 * Math.sin(kk * Math.PI)));
   }
+}
+// Птица на тросе: сидит у своего конца гирлянды (чуть дальше крайней лампы); без гирлянды — на четверти троса.
+function birdPos(s, t){
+  const side = s.bird; if (!side) return null;
+  let x;
+  if (s.chain.length){ const tg = chainTargets(s.chain), x0 = tg[0].x, x1 = tg[tg.length - 1].x + tg[0].w; x = side === 'R' ? x1 + 28 : x0 - 28; }
+  else x = side === 'R' ? W * 0.8 : W * 0.2;
+  x = Math.max(24, Math.min(W - 24, x));
+  return { x, y: sagY(x) - 2, side };
+}
+// drawBird: спрайт bird-sit/bird-fly (смотрит влево; на левом конце — отражён, чтобы смотреть на гирлянду)
+function drawBird(c, x, y, faceRight, flying, t){
+  const im = spr(flying ? 'bird-fly' : 'bird-sit'), h = flying ? 54 : 48;
+  const peck = G.birdPeck && t - G.birdPeck < 500 ? Math.sin((t - G.birdPeck) / 40) * 4 : 0;
+  const hop = !flying ? Math.max(0, Math.sin(t / 900)) ** 12 * 6 : 0;
+  c.save(); c.translate(x, y - hop - Math.abs(peck)); if (faceRight) c.scale(-1, 1);
+  if (im){ const w = h * im.width / im.height; c.drawImage(im, -w / 2, -h * (flying ? 0.6 : 0.92), w, h); }
+  else {                                            // запасная птичка кодом
+    c.fillStyle = '#8a5a3a'; c.beginPath(); c.ellipse(0, -14, 13, 11, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#e8613a'; c.beginPath(); c.ellipse(-4, -10, 8, 7, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#8a5a3a'; c.beginPath(); c.arc(-10, -24, 7, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#f2b23a'; c.beginPath(); c.moveTo(-17, -24); c.lineTo(-23, -22); c.lineTo(-17, -21); c.fill();
+    c.fillStyle = '#111'; c.beginPath(); c.arc(-12, -26, 1.6, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+  if (peck){ c.save(); c.globalAlpha = 0.8; c.fillStyle = '#fff'; c.font = '900 14px Nunito, system-ui'; c.textAlign = 'center'; c.fillText('!', x + (faceRight ? 12 : -12), y - 44); c.restore(); }
+}
+function drawBirdOnWire(c, t){
+  if (!G.s || (!G.s.bird && !G.birdFly)) return;
+  const f = G.birdFly;
+  if (f && t >= f.t0 && t < f.t0 + f.dur){
+    const k = ease((t - f.t0) / f.dur), to = birdPos({ ...G.s, bird: f.toSide }, t);
+    const x = f.from.x + (to.x - f.from.x) * k, y = f.from.y + (to.y - f.from.y) * k - Math.sin(k * Math.PI) * 70;
+    drawBird(c, x, y, to.x > f.from.x, true, t); return;
+  }
+  if (f && t >= f.t0 + f.dur) G.birdFly = null;
+  if (f && t < f.t0){ drawBird(c, f.from.x, f.from.y, f.from.side === 'L', false, t); return; }
+  const b = birdPos(G.s, t); if (b) drawBird(c, b.x, b.y, b.side === 'L', false, t);
 }
 // drawGarland: активная гирлянда на тросе; свободные концы — большие разъёмы. Если перетаскиваемый кусок замкнёт кольцо —
 // бегущие огни, петля между концами и превью «+n²»; над гирляндой — сколько света она даст, если замкнуть.
@@ -1178,12 +1343,12 @@ function drawGarland(c, t){
   if (first) drawEnd(c, first, pulse, hs === 'L', ready, t);
   if (last) drawEnd(c, last, pulse, hs === 'R', ready, t);
   // бейдж над гирляндой: столько света даст кольцо из этой гирлянды (с превью, если кусок над концом)
-  const n = ready ? willClose : chain.length;
-  if (n >= 2 || ready) drawRingBadge(c, W / 2, geo.gy - 4, n, ready, t);
+  const val = ready ? closeValue(G.s, G.drag.i, hs) : ringValue(chain);
+  if (chain.length >= 2 || ready) drawRingBadge(c, W / 2, geo.gy - 4, val, ready, t);
 }
 // drawRingBadge: плашка «+n²» с лампочкой — длиннее гирлянда, больше света; ready — превью замыкания, ярче и крупнее
-function drawRingBadge(c, x, y, n, ready, t){
-  const txt = '+' + ringScore(n), k = ready ? 1.18 + 0.05 * Math.sin(t / 120) : 1;
+function drawRingBadge(c, x, y, val, ready, t){
+  const txt = '+' + val, k = ready ? 1.18 + 0.05 * Math.sin(t / 120) : 1;
   c.save(); c.translate(x, y); c.scale(k, k);
   c.font = '900 15px Nunito, system-ui, sans-serif'; const tw = c.measureText(txt).width, w = tw + 44;
   if (ready) glow(c, PAL.accent, 0, 0, w * 1.8, 0.45);
@@ -1240,7 +1405,7 @@ function drawBox(c, t){
 // сколько добавит текущая гирлянда, если её замкнуть. Цифры «набрано / цель».
 function drawMeter(c, t){
   const s = G.s, x = 14, w = W - 28, y = geo.meterY, h = 24, shown = meterValue(t), k = Math.min(1, shown / s.target);
-  const pot = s.chain.length >= 2 ? Math.min(1, (s.score + ringScore(s.chain.length)) / s.target) : k;
+  const pot = s.chain.length >= 2 ? Math.min(1, (s.score + ringValue(s.chain)) / s.target) : k;
   c.fillStyle = 'rgba(10,8,30,.7)'; c.beginPath(); c.roundRect(x - 3, y - 3, w + 6, h + 6, 15); c.fill();
   c.strokeStyle = 'rgba(255,230,160,.3)'; c.lineWidth = 1.5; c.stroke();
   if (pot > k){ c.fillStyle = 'rgba(255,207,51,.22)'; c.beginPath(); c.roundRect(x, y, Math.max(h, w * pot), h, 12); c.fill(); }
@@ -1277,7 +1442,8 @@ function drawPops(c, t){
   for (const p of G.pops){ if (t < p.t0) continue; const k = (t - p.t0) / dur(CFG.POP_MS), sc = easeBack(Math.min(1, k * 4)) * (p.big ? 1.4 : 1);
     c.save(); c.globalAlpha = 1 - k * k; c.translate(p.x, p.y - k * 46); c.scale(sc, sc);
     c.font = '900 30px Nunito, system-ui, sans-serif'; c.textAlign = 'center'; c.lineJoin = 'round';
-    c.strokeStyle = '#3a1d05'; c.lineWidth = 6; c.strokeText(p.text, 0, 0); c.fillStyle = PAL.accent; c.fillText(p.text, 0, 0); c.restore(); }
+    c.strokeStyle = '#3a1d05'; c.lineWidth = 6; c.strokeText(p.text, 0, 0); c.fillStyle = p.gold ? '#ffe36a' : PAL.accent; c.fillText(p.text, 0, 0);
+    if (p.gold) glow(c, '#ffd75a', 0, -8, 120, 0.4 * (1 - k)); c.restore(); }
 }
 function drawParticles(c, t){
   G.parts = G.parts.filter(p => t < p.t0 + p.life);
@@ -1365,11 +1531,11 @@ function render(){
       if (k > 0.5 && k < 0.7) glow(ctx, PAL.warm, x + PW() / 2, y + PH() / 2, PW() * 1.6, 0.3);
     } else drawPiece(ctx, p, x, y, !open, 1);
   });
-  drawGarland(ctx, t);
+  drawGarland(ctx, t); drawBirdOnWire(ctx, t);
   G.curls = G.curls.filter(cu => {
     if (t >= cu.t0 + dur(CFG.CURL_MS + CFG.HANG_MS)){
       G.wreaths.push({ slot: cu.slot, items: cu.items, t0: t }); litDirty = true; Sound.hang(); log('fx.end', 'curl', 'slot=' + cu.slot);
-      meterSet(Math.min(G.s.target, G.wreaths.reduce((a, w) => a + ringScore(w.items.length), 0)), t);
+      meterSet(Math.min(G.s.target, G.wreaths.reduce((a, w) => a + ringValue(w.items), 0)), t);
       const s = wreathSlot(cu.slot); burst(s.x, s.y, cu.items.map(p => colorOf(p.a)).concat([PAL.warm]), 18, 140, { life: 700, g: 60, size: 8 });
       return false;
     }
