@@ -1,0 +1,106 @@
+{
+ "bulb-on-red": [
+  59,
+  96
+ ],
+ "bulb-on-blue": [
+  59,
+  96
+ ],
+ "bulb-on-green": [
+  57,
+  96
+ ],
+ "bulb-on-yellow": [
+  57,
+  96
+ ],
+ "bulb-on-violet": [
+  57,
+  96
+ ],
+ "bulb-on-orange": [
+  57,
+  96
+ ],
+ "bulb-on-white": [
+  57,
+  96
+ ],
+ "bulb-off-red": [
+  58,
+  96
+ ],
+ "bulb-off-blue": [
+  58,
+  96
+ ],
+ "bulb-off-green": [
+  55,
+  96
+ ],
+ "bulb-off-yellow": [
+  55,
+  96
+ ],
+ "bulb-off-violet": [
+  55,
+  96
+ ],
+ "bulb-off-orange": [
+  55,
+  96
+ ],
+ "bulb-off-white": [
+  55,
+  96
+ ],
+ "plug-red": [
+  152,
+  156
+ ],
+ "plug-blue": [
+  148,
+  156
+ ],
+ "plug-green": [
+  152,
+  156
+ ],
+ "plug-yellow": [
+  152,
+  156
+ ],
+ "plug-violet": [
+  152,
+  156
+ ],
+ "plug-orange": [
+  152,
+  156
+ ],
+ "card-face": [
+  220,
+  162
+ ],
+ "card-back": [
+  220,
+  159
+ ],
+ "box-full": [
+  220,
+  211
+ ],
+ "box-empty": [
+  220,
+  211
+ ],
+ "bg-dark": [
+  720,
+  1080
+ ],
+ "bg-lit": [
+  720,
+  1080
+ ]
+}
